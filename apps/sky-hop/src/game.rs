@@ -68,6 +68,8 @@ pub struct Game {
     pub vy: i32,
     pub gates: [Gate; GATES],
     pub score: u32,
+    /// How far the pipes have travelled this run, px: the scenery scrolls by fractions of it.
+    pub scroll: i32,
     tick: u32,
     rng: u32,
 }
@@ -106,6 +108,7 @@ impl Game {
             vy: 0,
             gates: [Gate { x: 0, top: 0, bottom: 0, passed: false }; GATES],
             score: 0,
+            scroll: 0,
             tick: 0,
             rng: seed | 1, // xorshift sticks at 0
         };
@@ -119,6 +122,7 @@ impl Game {
         self.y = C * Q;
         self.vy = 0;
         self.score = 0;
+        self.scroll = 0;
         self.tick = 0;
         let mut prev = C;
         for i in 0..GATES {
@@ -173,6 +177,7 @@ impl Game {
         self.vy = (self.vy + GRAVITY).min(MAX_FALL);
         self.y += self.vy;
         let dx = speed(self.score);
+        self.scroll += dx;
         let mut out = Step::Nothing;
         for i in 0..GATES {
             self.gates[i].x -= dx;
@@ -381,6 +386,25 @@ mod tests {
         assert!(g.crashed(), "the top part reaches into the critter");
         g.gates[0] = Gate { x: HOP_X + R, top: 0, bottom: C - 8, passed: false };
         assert!(!g.crashed(), "the gate starts right after the critter's edge");
+    }
+
+    #[test]
+    fn the_scenery_scrolls_with_the_pipes_while_playing() {
+        let mut g = Game::new(2);
+        for _ in 0..30 {
+            g.step();
+        }
+        assert_eq!(g.scroll, 0, "not while ready");
+        g.flap();
+        let mut dist = 0;
+        for _ in 0..20 {
+            autopilot(&mut g);
+            dist += speed(g.score);
+            g.step();
+        }
+        assert_eq!(g.scroll, dist);
+        g.restart();
+        assert_eq!(g.scroll, 0);
     }
 
     #[test]

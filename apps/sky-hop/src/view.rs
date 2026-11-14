@@ -20,6 +20,8 @@ const INK: Rgb = Rgb(84, 56, 71);
 pub const SCORE_Y: i32 = 40;
 const DIGIT_H: i32 = 36;
 const DIGIT_GAP: i32 = 2;
+/// The town strip scrolls one px per this many px the pipes travel; the ground goes with the pipes.
+const BAND_SLOW: i32 = 40;
 /// The bird sprite's size, centred on the critter.
 const BIRD_W: i32 = 34;
 const BIRD_H: i32 = 24;
@@ -41,6 +43,8 @@ const DIGITS: [&Sprite; 10] = [
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Seen {
     xs: [i32; crate::game::GATES],
+    band: i32,
+    ground: i32,
     y: i32,
     wing: usize,
     score: u32,
@@ -48,7 +52,7 @@ pub struct Seen {
 }
 
 pub fn seen(g: &Game) -> Seen {
-    Seen { xs: g.gates.map(|gt| gt.x), y: g.hop_y(), wing: g.wing(), score: g.score, state: g.state }
+    Seen { xs: g.gates.map(|gt| gt.x), band: band_x(g), ground: ground_x(g), y: g.hop_y(), wing: g.wing(), score: g.score, state: g.state }
 }
 
 /// A surface that drops what falls outside a box, so a part of the picture can be redrawn alone.
@@ -104,22 +108,37 @@ fn pipes(s: &mut impl Surface, gt: &Gate) {
     shaft(s, gt.x, gt.bottom + PIPE_CAP_H, GROUND_Y - gt.bottom - PIPE_CAP_H);
 }
 
+/// Where the town strip and the ground are scrolled to: how far their tiles are shifted to the left.
+fn band_x(g: &Game) -> i32 {
+    g.scroll / BAND_SLOW % sprites::BAND.w
+}
+
+fn ground_x(g: &Game) -> i32 {
+    g.scroll % sprites::GROUND.w
+}
+
 /// The scenery in a box: sky, the town and grass, the ground. Every pixel of the box once.
-fn scenery(s: &mut impl Surface, x0: i32, y0: i32, w: i32, h: i32) {
+fn scenery(s: &mut impl Surface, g: &Game, x0: i32, y0: i32, w: i32, h: i32) {
     let band_y = GROUND_Y - sprites::BAND.h;
     let mut clip = Clip { s, x0, y0, x1: x0 + w, y1: y0 + h };
     clip.rect(0, 0, SIZE, band_y, sprites::SKY);
-    for x in [0, sprites::BAND.w] {
-        blit(&mut clip, &sprites::BAND, x, band_y);
-    }
-    for x in [0, sprites::GROUND.w] {
-        blit(&mut clip, &sprites::GROUND, x, GROUND_Y);
-    }
+    let tiles = |sp: &Sprite, shift: i32, y: i32, clip: &mut Clip<_>| {
+        if y0 + h > y && y0 < y + sp.h {
+            for k in 0..3 {
+                let x = k * sp.w - shift;
+                if x < x0 + w && x + sp.w > x0 {
+                    blit(clip, sp, x, y);
+                }
+            }
+        }
+    };
+    tiles(&sprites::BAND, band_x(g), band_y, &mut clip);
+    tiles(&sprites::GROUND, ground_x(g), GROUND_Y, &mut clip);
 }
 
 /// The background of a box: the scenery, then the parts of gates in it.
 fn background(s: &mut impl Surface, g: &Game, x0: i32, y0: i32, w: i32, h: i32) {
-    scenery(s, x0, y0, w, h);
+    scenery(s, g, x0, y0, w, h);
     let mut clip = Clip { s, x0, y0, x1: x0 + w, y1: y0 + h };
     for gt in &g.gates {
         pipes(&mut clip, gt);
@@ -127,14 +146,15 @@ fn background(s: &mut impl Surface, g: &Game, x0: i32, y0: i32, w: i32, h: i32) 
 }
 
 /// A gate at its new place; with `from`, the strip it left behind on the right gets the scenery back first.
-fn gate(s: &mut impl Surface, gt: &Gate, from: Option<i32>) {
+fn gate(s: &mut impl Surface, g: &Game, gt: &Gate, from: Option<i32>) {
     if gt.x >= SIZE && from.is_none_or(|x| x >= SIZE) {
         return;
     }
     if let Some(old) = from {
-        // What the pipe left behind, and its two margin columns that the sprite does not paint.
+        // What the pipe left behind, and its two margin columns that the sprite does not paint. Not the ground:
+        // it is repainted whenever it scrolls.
         let x0 = gt.x + GATE_W - 2;
-        scenery(s, x0, 0, old + GATE_W - x0, SIZE);
+        scenery(s, g, x0, 0, old + GATE_W - x0, GROUND_Y);
     }
     pipes(s, gt);
 }
@@ -202,15 +222,22 @@ fn over(s: &mut impl Surface, g: &Game, best: u32) {
     centre(s, C, 290, "TAP TO RETRY", GREY);
 }
 
+/// The town strip moved: repaint its rows, the pipes in them and the bird.
+fn scroll_band(s: &mut impl Surface, g: &Game) {
+    let y = GROUND_Y - sprites::BAND.h;
+    background(s, g, 0, y, SIZE, sprites::BAND.h);
+    blit(s, bird(g.wing()), HOP_X - BIRD_W / 2, g.hop_y() - BIRD_H / 2);
+}
+
 /// Draws the frame for `g`. `prev`: what is on screen now; `None`, or another state, repaints everything.
 pub fn frame(s: &mut impl Surface, g: &Game, best: u32, prev: Option<Seen>) -> Seen {
     let now = seen(g);
     let prev = prev.filter(|p| p.state == g.state);
     match prev {
         None => {
-            scenery(s, 0, 0, SIZE, SIZE);
+            scenery(s, g, 0, 0, SIZE, SIZE);
             for gt in &g.gates {
-                gate(s, gt, None);
+                gate(s, g, gt, None);
             }
             critter(s, g, None);
             match g.state {
@@ -226,11 +253,18 @@ pub fn frame(s: &mut impl Surface, g: &Game, best: u32, prev: Option<Seen>) -> S
         Some(p) => {
             if g.state == State::Playing {
                 for (gt, x) in g.gates.iter().zip(p.xs) {
-                    gate(s, gt, Some(x));
+                    gate(s, g, gt, Some(x));
                 }
+            }
+            if g.state == State::Playing && p.band != now.band {
+                scroll_band(s, g);
             }
             critter(s, g, Some(p.y));
             if g.state == State::Playing {
+                if p.ground != now.ground {
+                    let (y, h) = (GROUND_Y, SIZE - GROUND_Y);
+                    scenery(s, g, 0, y, SIZE, h);
+                }
                 score(s, g, p.score != g.score);
             }
         }
@@ -303,7 +337,7 @@ mod tests {
         let (rx, ry, _, _, c) = bird(g.wing()).rects[0];
         assert_eq!(fb_at(HOP_X - BIRD_W / 2 + rx as i32, g.hop_y() - BIRD_H / 2 + ry as i32), c);
         let mut bare = screen();
-        scenery(&mut Fb::new(&mut bare), 0, 0, SIZE, SIZE);
+        scenery(&mut Fb::new(&mut bare), &g, 0, 0, SIZE, SIZE);
         let (x, y) = (HOP_X - BIRD_W, g.hop_y());
         assert_eq!(fb_at(x, y), bare[(y * SIZE + x) as usize]);
     }
