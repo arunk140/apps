@@ -171,7 +171,9 @@ fn cell(b: &mut Batch, parent: Obj, d: Day, dim: bool, today: bool, mark: u8, x:
     let c = b.create(Class::Label, parent)?;
     b.size(c, CELL_W, CELL_H)?;
     b.align(c, Align::TopLeft, x as i16, y as i16)?;
-    b.style(c, Prop::PadTop, 0, 2)?;
+    // 24 px: two digits of the 32 px system font fill a 48 px column and run into the next
+    b.style(c, Prop::TextFont, 0, F24 as i32)?;
+    b.style(c, Prop::PadTop, 0, 4)?;
     b.text(c, num(d.day).as_str())?;
     if today {
         b.style(c, Prop::BgColor, 0, ACCENT)?;

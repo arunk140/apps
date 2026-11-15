@@ -3,4 +3,5 @@ name = "Calendar"
 summary = "A month at a glance, with a dot on the days you have events"
 version = "0.1.0"
 author = "CMF Tech Community"
+screenshots = ["shots/month.png", "shots/page.png", "shots/card.png", "shots/next-month.png"]
 published = false
