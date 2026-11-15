@@ -35,7 +35,7 @@ One package can offer several of these; ask which the owner wants before buildin
 | Menu app | the default: a row in Apps, `main` runs until `BUTTON` | any |
 | Widget card | `app_features!(WIDGET)`; `api.widget(title, value)` stores text (23 B / 39 B, `\n` = 2nd line) the stub draws on a 344×166 card left of the face. A NAND write: on change, never per frame. A tap opens the app | 2026-11-15 |
 | Page | `app_features!(PAGE)`: the app is a whole screen next to the face. `api.on_page()` is `true` there; no `BUTTON` (the app never exits itself), swipe away = `PAUSE`, back = `RESUME` | 2026-11-15 |
-| Phone or Mac link | `send`/`recv`, `MESSAGE`: section "Apps that talk to a phone" below | 2026-11-13 for K |
+| Phone companion | `send`/`recv`, `MESSAGE`; the only way to get phone or internet data: "Apps that talk to a phone" below | 2026-11-13 for K |
 
 The user adds a widget or a page on the watch: long press on the app's row in Apps → "Add widget" / "Add page".
 Details: `app-guide.md`, "Widget" and "Page". A "full-screen widget" means a page.
@@ -82,14 +82,25 @@ Treat every message as untrusted: anyone in BLE range can read the pairing secre
 reason nothing personal goes over the channel: no names, event or message titles, locations. Send counts, flags,
 times of day.
 
-Phone side, next to the Nothing X app on the same phone: the channel key K (`abi-1.4.md`, "Writing a host"). No
-bind, no "Paired" popup, Nothing X keeps working. What exists today:
+**The companion is an app on the phone, next to Nothing X, on the same BLE link.** Nothing X keeps that link and
+keeps working; the companion talks to the stub over it with the channel key K (`abi-1.4.md`, "Writing a host"): no
+bind, no "Paired" popup, app messages arrive without polling. This is the normal setup, not a compromise: don't
+propose turning Nothing X or the phone's Bluetooth off.
+
+The watch gives an app nothing but the clock, the battery, its own storage and heart rate. Calendar events,
+weather, notifications, anything from the phone or the internet reaches an app only through a companion: the stock
+firmware syncs no such data to apps. Plan the companion with the app.
+
+What exists today:
 
 - The watch needs the stub with K (`fw-wp2.bin` from 2026-11-13 or later, by OTA) and a loader from 2026-11-13 or
   later. Stock firmware has no channel at all.
-- Host implementations: Python (`wp2apps.channel.Channel(channel_key=True)`, Mac) and an iOS one in a private app.
-  There is no Android host yet; `connectGatt` next to Nothing X is untested.
-- A Mac and a phone can't both be connected: the watch takes one central.
+- iOS: WireKit (`KSession`) in the owner's private iPhone app; it left the SDK in `82535fe`. Ask the owner for it.
+  The phone's data comes from the platform (EventKit for calendars, which already includes a Google account), so a
+  companion needs no Google or other cloud login.
+- Android: no host yet; a second GATT client next to Nothing X (`connectGatt`) is untested.
+- Mac: Python, `wp2apps.channel.Channel(channel_key=True)`. For development and emulator e2e: a Mac is a second
+  central, and the watch takes one, so the phone is cut off while it's connected.
 
 An app that needs a companion says so under `## Requirements` in `store.md`, naming the companion and where to get
 it.

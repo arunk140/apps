@@ -29,8 +29,9 @@ Ask, don't guess. A package can mix them (`app-guide.md` section 3, "Widget" and
 - **Page** (`PAGE`): a full screen next to the face ("full-screen widget"). Branch on `api.on_page()` for a compact
   view. No `BUTTON` there, so the loop never returns on its own; `PAUSE` on swipe away, `RESUME` on return: draw
   nothing and run no motor in between, redraw time-dependent parts on `RESUME`.
-- **Phone/Mac link**: AGENTS.md, "Apps that talk to a phone". Only non-personal data on the channel. Name the
-  companion under `## Requirements`.
+- **Phone companion**: needed for any data the watch doesn't have (calendar, weather, notifications, the web). It
+  runs on the phone next to Nothing X, on the same link (AGENTS.md, "Apps that talk to a phone"); a Mac host is for
+  development only. Only non-personal data on the channel. Name the companion under `## Requirements`.
 
 ```rust
 cmf_wp2_app::entry!(main);
