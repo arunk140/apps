@@ -11,6 +11,7 @@ An app runs on a watch with the patched firmware and the App Loader, both on the
 |---|---|
 | [`vibration-lab`](apps/vibration-lab) | A test bench for the vibration motor. The template for new apps |
 | [`ui-gallery`](apps/ui-gallery) | The stock firmware's widgets as an app can use them |
+| [`calendar`](apps/calendar) | A month with a dot on the days with events; a page and a widget next to the watch face |
 
 ## Make your own app
 
