@@ -21,7 +21,7 @@ You need git, [uv](https://docs.astral.sh/uv/), [Rust](https://rustup.rs) with
 ```bash
 make new NAME=my-app        # apps/my-app, a copy of vibration-lab
 make test APP=my-app        # its host unit tests
-make sim APP=my-app         # run it in a window on your computer
+make sim APP=my-app         # run it in a window on your computer (canvas apps, not LVGL yet)
 make build APP=my-app       # target/my-app.wp2app
 ```
 
