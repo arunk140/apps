@@ -12,7 +12,7 @@ pub struct Glyph {
     pub y: i8,
     pub w: u8,
     pub h: u8,
-    /// Byte offset of the 4-bit coverage, two pixels a byte, rows packed.
+    /// Byte offset of the glyph's coverage in `Font::bits`.
     pub off: u16,
 }
 
@@ -21,6 +21,9 @@ pub struct Font {
     pub descent: i32,
     /// Height of a capital above the baseline.
     pub cap: i32,
+    /// `bits` holds runs, a byte each (coverage << 4 | length - 1, within a row); else 4-bit coverage, two pixels a
+    /// byte, rows packed.
+    pub rle: bool,
     pub glyphs: &'static [Glyph],
     pub bits: &'static [u8],
 }
@@ -39,6 +42,41 @@ impl Font {
         t.chars().map(|c| self.glyph(c).map_or(0, |g| g.adv as i32)).sum()
     }
 
+    /// Calls `f(row, start, len, coverage)` for each run of equal coverage in `g`, row by row, left to right,
+    /// whichever way the font stores it (runs that touch with the same coverage are merged).
+    fn runs(&self, g: &Glyph, mut f: impl FnMut(usize, usize, usize, u8)) {
+        let w = g.w as usize;
+        let mut at = g.off as usize;
+        for row in 0..g.h as usize {
+            let mut col = 0;
+            let mut open: Option<(usize, usize, u8)> = None;
+            while col < w {
+                let (a, n) = if self.rle {
+                    let b = self.bits[at];
+                    at += 1;
+                    (b >> 4, (b & 15) as usize + 1)
+                } else {
+                    let i = row * w + col;
+                    let b = self.bits[g.off as usize + i / 2];
+                    (if i.is_multiple_of(2) { b >> 4 } else { b & 15 }, 1)
+                };
+                let n = n.min(w - col);
+                open = match open {
+                    Some((s, l, oa)) if oa == a => Some((s, l + n, a)),
+                    Some((s, l, oa)) => {
+                        f(row, s, l, oa);
+                        Some((col, n, a))
+                    }
+                    None => Some((col, n, a)),
+                };
+                col += n;
+            }
+            if let Some((s, l, a)) = open {
+                f(row, s, l, a);
+            }
+        }
+    }
+
     /// Draws `t` with its baseline at `y`, from `x`; returns the pen position after it. Characters the font
     /// lacks are skipped.
     pub fn draw(&self, s: &mut impl Surface, x: i32, y: i32, t: &str, fg: u16, bg: u16) -> i32 {
@@ -49,25 +87,12 @@ impl Font {
         let mut pen = x;
         for ch in t.chars() {
             let Some(g) = self.glyph(ch) else { continue };
-            let (gx, gy, w) = (pen + g.x as i32, y + g.y as i32, g.w as usize);
-            let at = |i: usize| {
-                let b = self.bits[g.off as usize + i / 2];
-                if i.is_multiple_of(2) { b >> 4 } else { b & 15 }
-            };
-            for row in 0..g.h as usize {
-                let base = row * w;
-                let mut col = 0;
-                while col < w {
-                    let a = at(base + col);
-                    let start = col;
-                    while col < w && at(base + col) == a {
-                        col += 1;
-                    }
-                    if a != 0 {
-                        s.rect(gx + start as i32, gy + row as i32, (col - start) as i32, 1, shade[a as usize]);
-                    }
+            let (gx, gy) = (pen + g.x as i32, y + g.y as i32);
+            self.runs(g, |row, start, len, a| {
+                if a != 0 {
+                    s.rect(gx + start as i32, gy + row as i32, len as i32, 1, shade[a as usize]);
                 }
-            }
+            });
             pen += g.adv as i32;
         }
         pen
@@ -88,18 +113,12 @@ impl Font {
                 continue;
             }
             let mut ink = [0u64; ROWS];
-            for row in 0..h {
-                let mut bits = 0u64;
-                for col in 0..w {
-                    let i = (row * w + col) as usize;
-                    let b = self.bits[g.off as usize + i / 2];
-                    let a = if i.is_multiple_of(2) { b >> 4 } else { b & 15 };
-                    if a >= 4 {
-                        bits |= 1 << (col + r);
-                    }
+            self.runs(g, |row, start, len, a| {
+                if a >= 4 {
+                    let run = if len >= 64 { u64::MAX } else { (1u64 << len) - 1 };
+                    ink[row + r as usize] |= run << (start as i32 + r);
                 }
-                ink[(row + r) as usize] = bits;
-            }
+            });
             let n = (h + 2 * r) as usize;
             for oy in 0..n {
                 let mut out = 0u64;
@@ -229,6 +248,22 @@ mod tests {
         assert!(L.covers("12:05 pm km mi ft Vela Nav Arrived Off route"));
         assert!(S.covers("Bannerghatta Main Road · 4.7 km · 12 min Rerouting…"));
         assert!(!S.covers("ಹೊಸೂರು ರಸ್ತೆ"));
+    }
+
+    #[test]
+    fn every_glyph_decodes_to_whole_rows() {
+        for f in [&XL, &L, &S] {
+            for g in f.glyphs {
+                let mut cols = std::vec![0usize; g.h as usize];
+                f.runs(g, |row, start, len, _| {
+                    assert_eq!(start, cols[row], "{:?} row {row}", g.c);
+                    cols[row] += len;
+                });
+                assert!(cols.iter().all(|&c| c == g.w as usize), "{:?}", g.c);
+            }
+        }
+        // the big sizes are stored as runs, the small one packed
+        assert!(XL.rle && L.rle && !S.rle);
     }
 
     #[test]
