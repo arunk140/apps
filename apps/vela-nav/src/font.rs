@@ -73,6 +73,62 @@ impl Font {
         pen
     }
 
+    /// A black outline `r` px (≤ 4) around the ink of `t`, for text drawn over the map: draw it, then the text over
+    /// it with a black background. Each glyph's ink is a bit mask a row, widened with shifts, so it is cheap.
+    pub fn halo(&self, s: &mut impl Surface, x: i32, y: i32, t: &str, r: i32) {
+        const ROWS: usize = 80;
+        let r = r.clamp(0, 4);
+        let mut pen = x;
+        for ch in t.chars() {
+            let Some(g) = self.glyph(ch) else { continue };
+            let (w, h) = (g.w as i32, g.h as i32);
+            let (gx, gy) = (pen + g.x as i32 - r, y + g.y as i32 - r);
+            pen += g.adv as i32;
+            if w == 0 || w + 2 * r > 64 || (h + 2 * r) as usize > ROWS {
+                continue;
+            }
+            let mut ink = [0u64; ROWS];
+            for row in 0..h {
+                let mut bits = 0u64;
+                for col in 0..w {
+                    let i = (row * w + col) as usize;
+                    let b = self.bits[g.off as usize + i / 2];
+                    let a = if i.is_multiple_of(2) { b >> 4 } else { b & 15 };
+                    if a >= 4 {
+                        bits |= 1 << (col + r);
+                    }
+                }
+                ink[(row + r) as usize] = bits;
+            }
+            let n = (h + 2 * r) as usize;
+            for oy in 0..n {
+                let mut out = 0u64;
+                for dy in -r..=r {
+                    let sy = oy as i32 + dy;
+                    if sy < 0 || sy >= n as i32 || ink[sy as usize] == 0 {
+                        continue;
+                    }
+                    let m = ink[sy as usize];
+                    // a round pen: the reach across shrinks with the distance down
+                    let reach = [[0, 0, 0, 0, 0], [1, 0, 0, 0, 0], [2, 2, 1, 0, 0], [3, 3, 2, 1, 0], [4, 4, 3, 3, 1]]
+                        [r as usize][dy.unsigned_abs() as usize];
+                    let mut d = m;
+                    for i in 1..=reach {
+                        d |= m << i | m >> i;
+                    }
+                    out |= d;
+                }
+                while out != 0 {
+                    let start = out.trailing_zeros();
+                    let len = (!(out >> start)).trailing_zeros().min(64 - start);
+                    s.rect(gx + start as i32, gy + oy as i32, len as i32, 1, 0);
+                    let mask = if len >= 64 { u64::MAX } else { ((1u64 << len) - 1) << start };
+                    out &= !mask;
+                }
+            }
+        }
+    }
+
     /// The longest start of `t` that fits `max` px, and whether it was cut (then an ellipsis follows it).
     pub fn fit<'a>(&self, t: &'a str, max: i32) -> (&'a str, bool) {
         if self.width(t) <= max {

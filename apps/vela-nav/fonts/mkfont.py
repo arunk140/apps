@@ -16,8 +16,8 @@ ASCII = "".join(chr(c) for c in range(32, 127))
 # (Rust name, file, px, characters)
 FONTS = [
     ("XL", "NotoSans-Bold.ttf", 84, "0123456789. "),
-    # units, the clock, the limit, titles
-    ("L", "NotoSans-SemiBold.ttf", 40, "0123456789:. abcdefghijklmnopqrstuvwxyzAVNRO"),
+    # units, the clock, the limit, titles, the Home and Work buttons
+    ("L", "NotoSans-SemiBold.ttf", 40, "0123456789:. abcdefghijklmnopqrstuvwxyzAVNROHSW…"),
     ("S", "NotoSans-Medium.ttf", 26, ASCII + "…·"),
 ]
 
